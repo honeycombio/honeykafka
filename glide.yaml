@@ -1,9 +1,7 @@
 package: github.com/honeycombio/honeykaf
 import:
 - package: github.com/Shopify/sarama
-  version: v1.14.0
 - package: github.com/Sirupsen/logrus
-  version: v1.0.3
 - package: github.com/honeycombio/dynsampler-go
 - package: github.com/honeycombio/honeytail
   subpackages:
@@ -12,9 +10,5 @@ import:
   - parsers
   - parsers/htjson
 - package: github.com/honeycombio/libhoney-go
-  version: v1.4.0
 - package: github.com/honeycombio/urlshaper
 - package: github.com/jessevdk/go-flags
-  version: v1.3.0
-- package: golang.org/x/crypto
-- package: golang.org/x/sys
