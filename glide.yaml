@@ -16,3 +16,5 @@ import:
 - package: github.com/honeycombio/urlshaper
 - package: github.com/jessevdk/go-flags
   version: v1.3.0
+- package: golang.org/x/crypto
+- package: golang.org/x/sys
