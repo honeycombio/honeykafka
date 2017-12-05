@@ -1,0 +1,30 @@
+os:
+  - linux
+
+language: go
+
+addons:
+    artifacts:
+        debug: true
+        paths:
+        - $GOPATH/bin
+
+dist: trusty
+
+go:
+    - 1.9
+
+script:
+    - set -e
+# Run tests
+    - go test github.com/honeycombio/honeykaf/...
+# Build binary and packages
+    - go install -ldflags "-X main.BuildID=1.${TRAVIS_BUILD_NUMBER}" github.com/honeycombio/honeykaf/...
+
+before_install:
+    # Install fpm for deb/rpm package building
+    - sudo apt-get -qq update
+    - sudo apt-get install -y build-essential rpm
+
+install:
+        - true # HACK: fixes travis-CI lack of support for vendor/ + godeps
