@@ -134,13 +134,13 @@ func main() {
 	addParserDefaultOptions(&options)
 	sanityCheckOptions(&options)
 
-	if _, err := libhoney.VerifyWriteKey(libhoney.Config{
-		APIHost:  options.APIHost,
-		WriteKey: options.Reqs.WriteKey,
-	}); err != nil {
-		fmt.Fprintln(os.Stderr, "Could not verify Honeycomb write key: ", err)
-		os.Exit(1)
-	}
+	// if _, err := libhoney.VerifyWriteKey(libhoney.Config{
+	// 	APIHost:  options.APIHost,
+	// 	WriteKey: options.Reqs.WriteKey,
+	// }); err != nil {
+	// 	fmt.Fprintln(os.Stderr, "Could not verify Honeycomb write key: ", err)
+	// 	os.Exit(1)
+	// }
 	run(options)
 }
 
