@@ -1,5 +1,5 @@
-hash: 57a0867a2d939cc825c70d4ebe0d36656599cd87d81e18ed2464e6fe6a071b71
-updated: 2017-12-04T22:39:20.683368522-05:00
+hash: 5ed04cc8332974d5c4d3df602c0e828923c06f23bbcdf568d8316a7168262e90
+updated: 2017-12-04T20:12:12.911832882-08:00
 imports:
 - name: github.com/davecgh/go-spew
   version: 5215b55f46b2b919f50a1df0eaa5886afe4e3b3d
@@ -31,7 +31,7 @@ imports:
   - parsers
   - parsers/htjson
 - name: github.com/honeycombio/libhoney-go
-  version: fa150b33843ed6f8596f87a708f96b066191fcfd
+  version: 9bdca6032bc1b4f0bcbd590f3dc71102b38106dd
 - name: github.com/honeycombio/urlshaper
   version: 2baba9ae5b5faed757d6e4d66054967824a0a1b1
 - name: github.com/jessevdk/go-flags
@@ -56,7 +56,6 @@ imports:
   version: 320cb01ddbbf0473674c2585f9b6e245721de355
   subpackages:
   - unix
-  - windows
 - name: gopkg.in/alexcesaro/statsd.v2
   version: 7fea3f0d2fab1ad973e641e51dba45443a311a90
 testImports: []

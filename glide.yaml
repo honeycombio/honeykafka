@@ -10,5 +10,8 @@ import:
   - parsers
   - parsers/htjson
 - package: github.com/honeycombio/libhoney-go
+  version: 9bdca6032bc1b4f0bcbd590f3dc71102b38106dd
 - package: github.com/honeycombio/urlshaper
 - package: github.com/jessevdk/go-flags
+- package: golang.org/x/crypto
+  version: 51714a8c4ac1764f07ab4127d7f739351ced4759
