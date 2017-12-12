@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,11 +20,26 @@ import (
 	"github.com/honeycombio/urlshaper"
 
 	"github.com/honeycombio/honeytail/event"
+	"github.com/honeycombio/honeytail/httime"
 	"github.com/honeycombio/honeytail/parsers"
 	"github.com/honeycombio/honeytail/parsers/htjson"
 
 	"github.com/honeycombio/honeykaf/kafkatail"
 )
+
+type metadata struct {
+	presampledRate int
+	goalSampleRate int
+	dynsampleKeys  []string
+	timestamp      time.Time
+	dataset        string
+	writekey       string
+}
+type evWithMeta struct {
+	meta       metadata
+	Data       map[string]interface{}
+	SampleRate int
+}
 
 // actually go and be leashy
 func run(options GlobalOptions) {
@@ -59,14 +73,6 @@ func run(options GlobalOptions) {
 	if err := libhoney.Init(libhConfig); err != nil {
 		logrus.WithFields(logrus.Fields{"err": err}).Fatal(
 			"Error occured while spinning up Transimission")
-	}
-
-	// compile the prefix regex once for use on all channels
-	var prefixRegex *parsers.ExtRegexp
-	if options.PrefixRegex == "" {
-		prefixRegex = nil
-	} else {
-		prefixRegex = &parsers.ExtRegexp{regexp.MustCompile(options.PrefixRegex)}
 	}
 
 	// get our lines channel from which to read log lines
@@ -118,21 +124,27 @@ func run(options GlobalOptions) {
 
 		// two channels to handle backing off when rate limited and resending failed
 		// send attempts that are recoverable
-		toBeResent := make(chan event.Event, 2*options.NumSenders)
+		toBeResent := make(chan evWithMeta, 2*options.NumSenders)
 		// time in milliseconds to delay the send
 		delaySending := make(chan int, 2*options.NumSenders)
 
-		// apply any filters to the events before they get sent
-		modifiedToBeSent := modifyEventContents(toBeSent, options)
+		// pull out metada from the parsed event
+		separated := getMetadataFromEvent(toBeSent, options)
 
-		realToBeSent := make(chan event.Event, 10*options.NumSenders)
+		// apply any filters to the events before they get sent
+		modifiedToBeSent := modifyEventContents(separated, options)
+
+		// apply any sampling necessary
+		sampledToBeSent := sampleIfNecessary(modifiedToBeSent, options)
+
+		realToBeSent := make(chan evWithMeta, 10*options.NumSenders)
 		go func() {
 			wg := sync.WaitGroup{}
 			for i := uint(0); i < options.NumSenders; i++ {
 				wg.Add(1)
 				go func() {
-					for ev := range modifiedToBeSent {
-						realToBeSent <- ev
+					for evM := range sampledToBeSent {
+						realToBeSent <- evM
 					}
 					wg.Done()
 				}()
@@ -156,7 +168,7 @@ func run(options GlobalOptions) {
 		parsersWG.Add(1)
 		go func(plines chan string) {
 			// ProcessLines won't return until lines is closed
-			parser.ProcessLines(plines, toBeSent, prefixRegex)
+			parser.ProcessLines(plines, toBeSent, nil)
 			// trigger the sending goroutine to finish up
 			close(toBeSent)
 			// wait for all the events in toBeSent to be handed to libhoney
@@ -188,11 +200,60 @@ func getParserAndOptions(options GlobalOptions) (parsers.Parser, interface{}) {
 	return parser, opts
 }
 
+// getMetadataFromEvent takes an event as parsed by the JSON parser and
+// sepraates it in to the metadata portion and the data portion. It sends that
+// event down the returned channel, which now contains evWithMetas
+func getMetadataFromEvent(mixed chan event.Event, options GlobalOptions) chan evWithMeta {
+	evWithMChan := make(chan evWithMeta)
+	go func() {
+		for {
+			ev := <-mixed
+			evWithM := evWithMeta{}
+			if metaInterface, ok := ev.Data["meta"]; ok {
+				if metaMap, ok := metaInterface.(map[string]interface{}); ok {
+					// TODO something something type safety two phase JSON decode
+					meta := metadata{}
+					meta.presampledRate = metaMap["presamplerate"].(int)
+					if meta.presampledRate == 0 {
+						meta.presampledRate = 1
+					}
+					meta.goalSampleRate = metaMap["goal_samplerate"].(int)
+					if meta.goalSampleRate == 0 {
+						meta.goalSampleRate = options.GoalSampleRate
+					}
+					meta.dynsampleKeys = metaMap["dynsample_keys"].([]string)
+					ts, err := httime.Parse(time.RFC3339Nano, metaMap["timestamp"].(string))
+					if err != nil {
+						ts = time.Now()
+					}
+					meta.timestamp = ts
+					meta.dataset = metaMap["dataset"].(string)
+					if meta.dataset == "" {
+						meta.dataset = options.Reqs.Dataset
+					}
+					meta.writekey = metaMap["writekey"].(string)
+					if meta.writekey == "" {
+						meta.writekey = options.Reqs.WriteKey
+					}
+					evWithM.meta = meta
+				}
+				if data, ok := ev.Data["data"]; ok {
+					if dataMap, ok := data.(map[string]interface{}); ok {
+						evWithM.Data = dataMap
+					}
+				}
+			}
+			evWithMChan <- evWithM
+		}
+	}()
+	return evWithMChan
+}
+
 // modifyEventContents takes a channel from which it will read events. It
 // returns a channel on which it will send the munged events. It is responsible
 // for hashing or dropping or adding fields to the events and doing the dynamic
 // sampling, if enabled
-func modifyEventContents(toBeSent chan event.Event, options GlobalOptions) chan event.Event {
+func modifyEventContents(toBeSent chan evWithMeta, options GlobalOptions) chan evWithMeta {
 	// parse the addField bit once instead of for every event
 	parsedAddFields := map[string]string{}
 	for _, addField := range options.AddFields {
@@ -220,61 +281,35 @@ func modifyEventContents(toBeSent chan event.Event, options GlobalOptions) chan 
 			shaper.pr.Patterns = append(shaper.pr.Patterns, &pat)
 		}
 	}
-	// initialize the dynamic sampler
-	var sampler dynsampler.Sampler
-	if len(options.DynSample) != 0 {
-		sampler = &dynsampler.AvgSampleWithMin{
-			GoalSampleRate:    options.GoalSampleRate,
-			ClearFrequencySec: options.DynWindowSec,
-			MinEventsPerSec:   options.MinSampleRate,
-		}
-		if err := sampler.Start(); err != nil {
-			logrus.WithField("error", err).Fatal("dynsampler failed to start")
-		}
-	}
 	// ok, we need to munge events. Sing up enough goroutines to handle this
-	newSent := make(chan event.Event, options.NumSenders)
+	newSent := make(chan evWithMeta, options.NumSenders)
 	go func() {
 		wg := sync.WaitGroup{}
 		for i := uint(0); i < options.NumSenders; i++ {
 			wg.Add(1)
 			go func() {
-				for ev := range toBeSent {
+				for evM := range toBeSent {
 					// do dropping
 					for _, field := range options.DropFields {
-						delete(ev.Data, field)
+						delete(evM.Data, field)
 					}
 					// do scrubbing
 					for _, field := range options.ScrubFields {
-						if val, ok := ev.Data[field]; ok {
+						if val, ok := evM.Data[field]; ok {
 							// generate a sha256 hash and use the base16 for the content
 							newVal := sha256.Sum256([]byte(fmt.Sprintf("%v", val)))
-							ev.Data[field] = fmt.Sprintf("%x", newVal)
+							evM.Data[field] = fmt.Sprintf("%x", newVal)
 						}
 					}
 					// do adding
 					for k, v := range parsedAddFields {
-						ev.Data[k] = v
+						evM.Data[k] = v
 					}
 					// do request shaping
 					for _, field := range options.RequestShape {
-						shaper.requestShape(field, &ev, options)
+						shaper.requestShape(field, &evM, options)
 					}
-					ev.SampleRate = getPresampleRate(&ev, options)
-					logrus.WithField("srate", ev.SampleRate).Debug("sample")
-					// do dynsampling last so it can use request shaped fields
-					if sampler == nil {
-						ev.SampleRate = int(options.SampleRate) * ev.SampleRate
-					} else {
-						key := makeDynsampleKey(&ev, options)
-						sr := sampler.GetSampleRate(key)
-						if rand.Intn(sr) != 0 {
-							ev.SampleRate = -1
-						} else {
-							ev.SampleRate = sr * ev.SampleRate
-						}
-					}
-					newSent <- ev
+					newSent <- evM
 				}
 				wg.Done()
 			}()
@@ -285,47 +320,84 @@ func modifyEventContents(toBeSent chan event.Event, options GlobalOptions) chan 
 	return newSent
 }
 
-// getPresampleRate will return the rate at which this event has already been
-// sampled, if it has.  If it has not, it returns 1 for safe multiplication
-func getPresampleRate(ev *event.Event, options GlobalOptions) int {
-	// if presampling is not enabled
-	logrus.Debug("getting")
-
-	if options.PreSampleKey == "" {
-		logrus.Debug("no sample key")
-		return 1
-	}
-	// if the presample key is present
-	if val, ok := ev.Data[options.PreSampleKey]; ok {
-		logrus.WithField("val", val).Debug("checking")
-		switch val := val.(type) {
-		case int64:
-			logrus.Debug("int64")
-			return int(val)
-		case float64:
-			logrus.Debug("float64")
-			return int(val)
-		case string:
-			logrus.Debug("string")
-			i, err := strconv.Atoi(val)
-			if err != nil {
-				return 1
+// sampleIfNecessary looks at the event and if the config options dictate,
+// sample the event.
+func sampleIfNecessary(toBeSent chan evWithMeta, options GlobalOptions) chan evWithMeta {
+	newSent := make(chan evWithMeta, options.NumSenders)
+	go func() {
+		for evM := range toBeSent {
+			if evM.meta.goalSampleRate <= 1 {
+				// no additional sampling necessary
+				evM.SampleRate = evM.meta.presampledRate
+				newSent <- evM
+				continue
 			}
-			return i
+			sampler := getSampler(evM, options)
+			// make the key from which to get the sample rate
+			key := makeDynsampleKey(evM)
+			// get sample rate
+			rate := sampler.GetSampleRate(key)
+			if rand.Intn(rate) != 0 {
+				evM.SampleRate = -1
+			} else {
+				evM.SampleRate = rate * evM.meta.presampledRate
+			}
+			newSent <- evM
 		}
-	}
-	// presample key is defined but not present in this event
-	logrus.Debug("default")
+	}()
+	return newSent
+}
 
-	return 1
+// initialize the dynamic sampler holder
+var samplers map[string]dynsampler.Sampler
+var samplerLock sync.RWMutex
+
+// getSampler returns a sampler if one exists for thi event type or creates one
+// if it doesn't. The creation is protected for multithreaded access to the
+// sampler cache map.
+func getSampler(evM evWithMeta, options GlobalOptions) dynsampler.Sampler {
+	// make a key to get the right dynsampler to use
+	fields := []string{
+		evM.meta.dataset, evM.meta.writekey,
+		fmt.Sprintf("%d", evM.meta.goalSampleRate)}
+	for _, field := range evM.meta.dynsampleKeys {
+		fields = append(fields, field)
+	}
+	key := strings.Join(fields, "_")
+
+	var sampler dynsampler.Sampler
+	var present bool
+
+	// go ahead and create the sampler with the appropriate locking
+	samplerLock.RLock()
+	if sampler, present = samplers[key]; !present {
+		// The sampler wasn't found, so we'll create it.
+		samplerLock.RUnlock()
+		samplerLock.Lock()
+		if sampler, present = samplers[key]; !present {
+			sampler = &dynsampler.AvgSampleWithMin{
+				GoalSampleRate:    evM.meta.goalSampleRate,
+				ClearFrequencySec: options.DynWindowSec,
+				MinEventsPerSec:   options.MinSampleRate,
+			}
+			if err := samplers[key].Start(); err != nil {
+				logrus.WithField("error", err).Fatal("dynsampler failed to start")
+			}
+			samplers[key] = sampler
+		}
+		samplerLock.Unlock()
+	} else {
+		samplerLock.RUnlock()
+	}
+	return samplers[key]
 }
 
 // makeDynsampleKey pulls in all the values necessary from the event to create a
 // key for dynamic sampling
-func makeDynsampleKey(ev *event.Event, options GlobalOptions) string {
-	key := make([]string, len(options.DynSample))
-	for i, field := range options.DynSample {
-		if val, ok := ev.Data[field]; ok {
+func makeDynsampleKey(evM evWithMeta) string {
+	key := make([]string, len(evM.meta.dynsampleKeys))
+	for i, field := range evM.meta.dynsampleKeys {
+		if val, ok := evM.Data[field]; ok {
 			switch val := val.(type) {
 			case bool:
 				key[i] = strconv.FormatBool(val)
@@ -355,7 +427,7 @@ type requestShaper struct {
 // VERB /path/of/request HTTP/1.x
 // If it does, it will break it apart into components, normalize the URL,
 // and add a handful of additional fields based on what it finds.
-func (r *requestShaper) requestShape(field string, ev *event.Event,
+func (r *requestShaper) requestShape(field string, ev *evWithMeta,
 	options GlobalOptions) {
 	if val, ok := ev.Data[field]; ok {
 		// start by splitting out method, uri, and version
@@ -414,7 +486,7 @@ func whitelistKey(whiteKeys []string, key string) bool {
 
 // sendToLibhoney reads from the toBeSent channel and shoves the events into
 // libhoney events, sending them on their way.
-func sendToLibhoney(ctx context.Context, toBeSent chan event.Event, toBeResent chan event.Event,
+func sendToLibhoney(ctx context.Context, toBeSent chan evWithMeta, toBeResent chan evWithMeta,
 	delaySending chan int, doneSending chan bool) {
 	for {
 		// check and see if we need to back off the API because of rate limiting
@@ -451,27 +523,27 @@ func sendToLibhoney(ctx context.Context, toBeSent chan event.Event, toBeResent c
 }
 
 // sendEvent does the actual handoff to libhoney
-func sendEvent(ev event.Event) {
-	if ev.SampleRate == -1 {
+func sendEvent(evM evWithMeta) {
+	if evM.SampleRate == -1 {
 		// drop the event!
 		logrus.WithFields(logrus.Fields{
-			"event": ev,
+			"event": evM,
 		}).Debug("droppped event due to sampling")
 		return
 	}
 	libhEv := libhoney.NewEvent()
-	libhEv.Metadata = ev
-	libhEv.Timestamp = ev.Timestamp
-	libhEv.SampleRate = uint(ev.SampleRate)
-	if err := libhEv.Add(ev.Data); err != nil {
+	libhEv.Metadata = evM
+	libhEv.Timestamp = evM.meta.timestamp
+	libhEv.SampleRate = uint(evM.SampleRate)
+	if err := libhEv.Add(evM.Data); err != nil {
 		logrus.WithFields(logrus.Fields{
-			"event": ev,
+			"event": evM,
 			"error": err,
 		}).Error("Unexpected error adding data to libhoney event")
 	}
 	if err := libhEv.SendPresampled(); err != nil {
 		logrus.WithFields(logrus.Fields{
-			"event": ev,
+			"event": evM,
 			"error": err,
 		}).Error("Unexpected error event to libhoney send")
 	}
@@ -480,7 +552,7 @@ func sendEvent(ev event.Event) {
 // handleResponses reads from the response queue, logging a summary and debug
 // re-enqueues any events that failed to send in a retryable way
 func handleResponses(responses chan libhoney.Response, stats *responseStats,
-	toBeResent chan event.Event, delaySending chan int,
+	toBeResent chan evWithMeta, delaySending chan int,
 	options GlobalOptions) {
 	go logStats(stats, options.StatusInterval)
 
@@ -497,7 +569,7 @@ func handleResponses(responses chan libhoney.Response, stats *responseStats,
 		if options.BackOff && (rsp.StatusCode == 429 || rsp.StatusCode == 500) {
 			logfields["retry_send"] = true
 			delaySending <- 1000 / int(options.NumSenders) // back off for a little bit
-			toBeResent <- rsp.Metadata.(event.Event)       // then retry sending the event
+			toBeResent <- rsp.Metadata.(evWithMeta)        // then retry sending the event
 		} else {
 			logfields["retry_send"] = false
 		}

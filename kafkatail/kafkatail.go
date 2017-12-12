@@ -16,6 +16,9 @@ type Options struct {
 	Partition int32  `long:"partition" description:"partition to read from"`
 }
 
+// GetChans returns a list of channels but it only ever has one entry - the
+// partition on which we're listening.
+// TODO listen on multiple channels to multiple partitions
 func GetChans(options Options) ([]chan string, error) {
 	linesChans := make([]chan string, 1, 1)
 	lines := make(chan string, 1)
