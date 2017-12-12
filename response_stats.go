@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/honeycombio/honeytail/event"
 	"github.com/honeycombio/libhoney-go"
 )
 
@@ -26,7 +25,7 @@ type responseStats struct {
 	maxDuration time.Duration
 	sumDuration time.Duration
 	minDuration time.Duration
-	event       *event.Event
+	event       *evWithMeta
 
 	totalCount       int
 	totalStatusCodes map[int]int
@@ -60,7 +59,7 @@ func (r *responseStats) update(rsp libhoney.Response) {
 		r.maxDuration = rsp.Duration
 	}
 	r.sumDuration += rsp.Duration
-	ev := rsp.Metadata.(event.Event)
+	ev := rsp.Metadata.(evWithMeta)
 	r.event = &ev
 }
 
@@ -95,7 +94,7 @@ func (r *responseStats) log() {
 	if r.event != nil {
 		fields := make(map[string]interface{})
 		fields["event"] = r.event.Data
-		fields["event_timestamp"] = r.event.Timestamp
+		fields["event_timestamp"] = r.event.meta.timestamp
 		logrus.WithFields(fields).Info("Last parsed event")
 	}
 }

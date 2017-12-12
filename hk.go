@@ -213,15 +213,18 @@ func getMetadataFromEvent(mixed chan event.Event, options GlobalOptions) chan ev
 				if metaMap, ok := metaInterface.(map[string]interface{}); ok {
 					// TODO something something type safety two phase JSON decode
 					meta := metadata{}
-					meta.presampledRate = metaMap["presamplerate"].(int)
+					meta.presampledRate = int(metaMap["presamplerate"].(float64))
 					if meta.presampledRate == 0 {
 						meta.presampledRate = 1
 					}
-					meta.goalSampleRate = metaMap["goal_samplerate"].(int)
+					meta.goalSampleRate = int(metaMap["goal_samplerate"].(float64))
 					if meta.goalSampleRate == 0 {
 						meta.goalSampleRate = options.GoalSampleRate
 					}
-					meta.dynsampleKeys = metaMap["dynsample_keys"].([]string)
+					keylist := metaMap["dynsample_keys"].([]interface{})
+					for _, key := range keylist {
+						meta.dynsampleKeys = append(meta.dynsampleKeys, key.(string))
+					}
 					ts, err := httime.Parse(time.RFC3339Nano, metaMap["timestamp"].(string))
 					if err != nil {
 						ts = time.Now()
@@ -563,7 +566,7 @@ func handleResponses(responses chan libhoney.Response, stats *responseStats,
 			"body":        strings.TrimSpace(string(rsp.Body)),
 			"duration":    rsp.Duration,
 			"error":       rsp.Err,
-			"timestamp":   rsp.Metadata.(event.Event).Timestamp,
+			"timestamp":   rsp.Metadata.(evWithMeta).meta.timestamp,
 		}
 		// if this is an error we should retry sending, re-enqueue the event
 		if options.BackOff && (rsp.StatusCode == 429 || rsp.StatusCode == 500) {
