@@ -78,7 +78,7 @@ func run(options GlobalOptions) {
 	// get our lines channel from which to read log lines
 	var linesChans []chan string
 
-	linesChans, err := kafkatail.GetChans(options.Kafka)
+	linesChans, err := kafkatail.GetChans(ctx, options.Kafka)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"err": err}).Fatal(
 			"Error occurred while trying to tail logfile")
@@ -207,7 +207,13 @@ func getMetadataFromEvent(mixed chan event.Event, options GlobalOptions) chan ev
 	evWithMChan := make(chan evWithMeta)
 	go func() {
 		for {
-			ev := <-mixed
+			var ev event.Event
+			var ok bool
+			if ev, ok = <-mixed; !ok {
+				// incoming channel is closed
+				close(evWithMChan)
+				return
+			}
 			evWithM := evWithMeta{}
 			if metaInterface, ok := ev.Data["meta"]; ok {
 				if metaMap, ok := metaInterface.(map[string]interface{}); ok {
@@ -328,7 +334,13 @@ func modifyEventContents(toBeSent chan evWithMeta, options GlobalOptions) chan e
 func sampleIfNecessary(toBeSent chan evWithMeta, options GlobalOptions) chan evWithMeta {
 	newSent := make(chan evWithMeta, options.NumSenders)
 	go func() {
-		for evM := range toBeSent {
+		for {
+			var evM evWithMeta
+			var ok bool
+			if evM, ok = <-toBeSent; !ok {
+				close(newSent)
+				return
+			}
 			if evM.meta.goalSampleRate <= 1 {
 				// no additional sampling necessary
 				evM.SampleRate = evM.meta.presampledRate

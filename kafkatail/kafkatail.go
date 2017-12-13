@@ -1,9 +1,8 @@
 package kafkatail
 
 import (
+	"context"
 	"log"
-	"os"
-	"os/signal"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -19,7 +18,7 @@ type Options struct {
 // GetChans returns a list of channels but it only ever has one entry - the
 // partition on which we're listening.
 // TODO listen on multiple channels to multiple partitions
-func GetChans(options Options) ([]chan string, error) {
+func GetChans(ctx context.Context, options Options) ([]chan string, error) {
 	linesChans := make([]chan string, 1, 1)
 	lines := make(chan string, 1)
 	linesChans[0] = lines
@@ -37,10 +36,6 @@ func GetChans(options Options) ([]chan string, error) {
 		panic(err)
 	}
 
-	// Trap SIGINT to trigger a shutdown.
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt)
-
 	go func() {
 		for {
 			select {
@@ -52,8 +47,8 @@ func GetChans(options Options) ([]chan string, error) {
 					log.Printf("got nil message\n")
 					time.Sleep(1000 * time.Millisecond)
 				}
-			case <-signals:
-				// clean up and exit
+			case <-ctx.Done():
+				// listen for the context's Done channel to clean up and exit
 				close(lines)
 				if err := partitionConsumer.Close(); err != nil {
 					log.Fatalln(err)
