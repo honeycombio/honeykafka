@@ -151,7 +151,7 @@ func setVersionUserAgent(backfill bool, parserName string) {
 	if backfill {
 		parserName += " backfill"
 	}
-	libhoney.UserAgentAddition = fmt.Sprintf("kh2/%s (%s)", version, parserName)
+	libhoney.UserAgentAddition = fmt.Sprintf("honeykaf/%s (%s)", version, parserName)
 }
 
 // handleOtherModes takse care of all flags that say we should just do something
@@ -216,9 +216,9 @@ func sanityCheckOptions(options *GlobalOptions) {
 
 func usage() {
 	fmt.Print(`
-Usage: kh2 -k <writekey> -d <mydata> [optional arguments]
+Usage: honeykaf -k <writekey> -d <mydata> [optional arguments]
 
 For even more detail on required and optional parameters, run
-kh2 --help
+honeykaf --help
 `)
 }
