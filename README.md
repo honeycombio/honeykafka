@@ -1,17 +1,33 @@
 honeykaf is a kafka consumer that expects JSON messages on a kafka topic and sends them on to Honeycomb
 
-It expects to read from a kafka topic populated by events with two keys, `meta` and `data`. Meta contains information about how honeykaf should treat the event and `data` contains the event itself. All keys in "meta" are optional; flags to `honeykaf` will provide defaults should fields be missing from the `meta` object.
+## How to run honeykaf
+
+honeykaf expects to consume from a single partition on a kafka topic. You should launch one copy of honeykaf per partition for your topic.
+
+The flags given to honeykaf will be used when the message from kafka does not specify a field - the kafka message overrides the flags given to the binary. This is the case for:
+* writekey
+* dataset
+* sample rate
+* dynamic sampler keys
+
+The intention is that the producer of the message (the application that puts the event on to the kafka queue) gets to choose the target dataset, sample rate, and dynamic sampler keys to use for that event. Different teams can then share the same kafka infrastructure while sending data to their own dataset.
+
+If an event is pushed into the kafka queue without one of these fields, the flags given to `honeykaf` will be used as default values. The operator can thereby set a default `writekey` or `sample rate` so that individual publishers can opt out of needing those fields.
+
+## Kafka Message Format
+
+`honeykaf` expects to read from a kafka topic populated by events with two keys, `meta` and `data`. Meta contains information about how `honeykaf` should treat the event and `data` contains the event itself. All keys in `meta` are optional; flags to `honeykaf` will provide defaults should fields be missing from the `meta` object.
 
 Here is an example of the schema:
 ```
 {
 	"meta": {
+		"writekey":"abcabc123123",
+		"dataset":"myds",
 		"presamplerate": 1,
 		"goal_samplerate": 1,
 		"dynsample_keys": ["key1","key2"],
-		"timestamp":"2017-12-04T01:02:03.456Z",
-		"dataset":"myds",
-		"writekey":"abcabc123123"
+		"timestamp":"2017-12-04T01:02:03.456Z"
 	},
 	"data":{
 		"key1":"val1",

@@ -270,6 +270,9 @@ func getMetadataFromEvent(mixed chan event.Event, options GlobalOptions) chan ev
 			if evWithM.meta.goalSampleRate <= 0 {
 				evWithM.meta.goalSampleRate = options.GoalSampleRate
 			}
+			if len(meta.dynsampleKeys) == 0 {
+				meta.dynsampleKeys = options.DynSample
+			}
 			if evWithM.meta.timestamp.IsZero() {
 				evWithM.meta.timestamp = time.Now()
 			}
