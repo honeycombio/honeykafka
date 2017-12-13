@@ -220,6 +220,7 @@ func getMetadataFromEvent(mixed chan event.Event, options GlobalOptions) chan ev
 					// TODO something something JSON decode struct but it's already decoded into interface{} so ...
 					// we should skip using honeytail's htjson parser and just decode directly into an evWithMeta.
 					// but until then... :stabbystabby:
+					// check each field exists, that it is the right type, that it has the right contents, etc.
 					meta := metadata{}
 					if prsr, ok := metaMap["presamplerate"]; ok {
 						if srFl, ok := prsr.(float64); ok {
@@ -281,7 +282,6 @@ func getMetadataFromEvent(mixed chan event.Event, options GlobalOptions) chan ev
 					}
 				}
 			}
-			fmt.Printf("got ev %+v\n", evWithM)
 			evWithMChan <- evWithM
 		}
 	}()
