@@ -215,6 +215,7 @@ func getMetadataFromEvent(mixed chan event.Event, options GlobalOptions) chan ev
 				return
 			}
 			evWithM := evWithMeta{}
+			// get the metadata out of the event
 			if metaInterface, ok := ev.Data["meta"]; ok {
 				if metaMap, ok := metaInterface.(map[string]interface{}); ok {
 					// TODO something something JSON decode struct but it's already decoded into interface{} so ...
@@ -227,16 +228,10 @@ func getMetadataFromEvent(mixed chan event.Event, options GlobalOptions) chan ev
 							meta.presampledRate = int(srFl)
 						}
 					}
-					if meta.presampledRate <= 0 {
-						meta.presampledRate = 1
-					}
 					if glsr, ok := metaMap["goal_samplerate"]; ok {
 						if srFl, ok := glsr.(float64); ok {
 							meta.goalSampleRate = int(srFl)
 						}
-					}
-					if meta.goalSampleRate <= 0 {
-						meta.goalSampleRate = options.GoalSampleRate
 					}
 					if kl, ok := metaMap["dynsample_keys"]; ok {
 						if keylist, ok := kl.([]interface{}); ok {
@@ -255,31 +250,39 @@ func getMetadataFromEvent(mixed chan event.Event, options GlobalOptions) chan ev
 							}
 						}
 					}
-					if meta.timestamp.IsZero() {
-						meta.timestamp = time.Now()
-					}
 					if ds, ok := metaMap["dataset"]; ok {
 						if dataset, ok := ds.(string); ok {
 							meta.dataset = dataset
 						}
-					}
-					if meta.dataset == "" {
-						meta.dataset = options.Reqs.Dataset
 					}
 					if wk, ok := metaMap["writekey"]; ok {
 						if writekey, ok := wk.(string); ok {
 							meta.writekey = writekey
 						}
 					}
-					if meta.writekey == "" {
-						meta.writekey = options.Reqs.WriteKey
-					}
 					evWithM.meta = meta
 				}
-				if data, ok := ev.Data["data"]; ok {
-					if dataMap, ok := data.(map[string]interface{}); ok {
-						evWithM.Data = dataMap
-					}
+			}
+			// set defaults for anything that didn't come from the event
+			if evWithM.meta.presampledRate <= 0 {
+				evWithM.meta.presampledRate = 1
+			}
+			if evWithM.meta.goalSampleRate <= 0 {
+				evWithM.meta.goalSampleRate = options.GoalSampleRate
+			}
+			if evWithM.meta.timestamp.IsZero() {
+				evWithM.meta.timestamp = time.Now()
+			}
+			if evWithM.meta.dataset == "" {
+				evWithM.meta.dataset = options.Reqs.Dataset
+			}
+			if evWithM.meta.writekey == "" {
+				evWithM.meta.writekey = options.Reqs.WriteKey
+			}
+			// get the data out of the event
+			if data, ok := ev.Data["data"]; ok {
+				if dataMap, ok := data.(map[string]interface{}); ok {
+					evWithM.Data = dataMap
 				}
 			}
 			evWithMChan <- evWithM
