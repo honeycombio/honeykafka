@@ -129,7 +129,6 @@ func main() {
 
 	setVersionUserAgent(false, "json")
 	handleOtherModes(flagParser, options.Modes)
-	addParserDefaultOptions(&options)
 	sanityCheckOptions(&options)
 
 	// if _, err := libhoney.VerifyWriteKey(libhoney.Config{
@@ -183,15 +182,6 @@ func handleOtherModes(fp *flag.Parser, modes OtherModes) {
 	}
 }
 
-func addParserDefaultOptions(options *GlobalOptions) {
-	if len(options.DynSample) != 0 {
-		// when using dynamic sampling, we make the sampling decision after parsing
-		// the content, so we must not tailsample.
-		options.GoalSampleRate = int(options.SampleRate)
-		options.SampleRate = 1
-	}
-}
-
 func sanityCheckOptions(options *GlobalOptions) {
 	switch {
 	case options.Reqs.WriteKey == "" || options.Reqs.WriteKey == "NULL":
@@ -202,16 +192,8 @@ func sanityCheckOptions(options *GlobalOptions) {
 		fmt.Println("Dataset name required with the --dataset flag.")
 		usage()
 		os.Exit(1)
-	case options.SampleRate == 0:
-		fmt.Println("Sample rate must be an integer >= 1")
-		usage()
-		os.Exit(1)
 	case options.RequestParseQuery != "whitelist" && options.RequestParseQuery != "all":
 		fmt.Println("request_parse_query flag must be either 'whitelist' or 'all'.")
-		usage()
-		os.Exit(1)
-	case len(options.DynSample) != 0 && options.SampleRate <= 1 && options.GoalSampleRate <= 1:
-		fmt.Println("sample rate flag must be set >= 2 when dynamic sampling is enabled")
 		usage()
 		os.Exit(1)
 	}
