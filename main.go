@@ -55,7 +55,7 @@ type GlobalOptions struct {
 	PrefixRegex       string   `long:"log_prefix" description:"pass a regex to this flag to strip the matching prefix from the line before handing to the parser. Useful when log aggregation prepends a line header. Use named groups to extract fields into the event."`
 	DynSample         []string `long:"dynsampling" description:"enable dynamic sampling using the field listed in this option. May be specified multiple times; fields will be concatenated to form the dynsample key. WARNING increases CPU utilization dramatically over normal sampling"`
 	DynWindowSec      int      `long:"dynsample_window" description:"measurement window size for the dynsampler, in seconds" default:"30"`
-	GoalSampleRate    int      `hidden:"true" description:"used to hold the desired sample rate and set tailing sample rate to 1"`
+	GoalSampleRate    int      `long:"goal_samplerate" description:"used to hold the desired sample rate and set tailing sample rate to 1"`
 	MinSampleRate     int      `long:"dynsample_minimum" description:"if the rate of traffic falls below this, dynsampler won't sample" default:"1"`
 
 	Reqs  RequiredOptions `group:"Required Options"`

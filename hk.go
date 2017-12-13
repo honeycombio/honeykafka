@@ -217,30 +217,59 @@ func getMetadataFromEvent(mixed chan event.Event, options GlobalOptions) chan ev
 			evWithM := evWithMeta{}
 			if metaInterface, ok := ev.Data["meta"]; ok {
 				if metaMap, ok := metaInterface.(map[string]interface{}); ok {
-					// TODO something something type safety two phase JSON decode
+					// TODO something something JSON decode struct but it's already decoded into interface{} so ...
+					// we should skip using honeytail's htjson parser and just decode directly into an evWithMeta.
+					// but until then... :stabbystabby:
 					meta := metadata{}
-					meta.presampledRate = int(metaMap["presamplerate"].(float64))
-					if meta.presampledRate == 0 {
+					if prsr, ok := metaMap["presamplerate"]; ok {
+						if srFl, ok := prsr.(float64); ok {
+							meta.presampledRate = int(srFl)
+						}
+					}
+					if meta.presampledRate <= 0 {
 						meta.presampledRate = 1
 					}
-					meta.goalSampleRate = int(metaMap["goal_samplerate"].(float64))
-					if meta.goalSampleRate == 0 {
+					if glsr, ok := metaMap["goal_samplerate"]; ok {
+						if srFl, ok := glsr.(float64); ok {
+							meta.goalSampleRate = int(srFl)
+						}
+					}
+					if meta.goalSampleRate <= 0 {
 						meta.goalSampleRate = options.GoalSampleRate
 					}
-					keylist := metaMap["dynsample_keys"].([]interface{})
-					for _, key := range keylist {
-						meta.dynsampleKeys = append(meta.dynsampleKeys, key.(string))
+					if kl, ok := metaMap["dynsample_keys"]; ok {
+						if keylist, ok := kl.([]interface{}); ok {
+							for _, key := range keylist {
+								if keyStr, ok := key.(string); ok {
+									meta.dynsampleKeys = append(meta.dynsampleKeys, keyStr)
+								}
+							}
+						}
 					}
-					ts, err := httime.Parse(time.RFC3339Nano, metaMap["timestamp"].(string))
-					if err != nil {
-						ts = time.Now()
+					if tp, ok := metaMap["timestamp"]; ok {
+						if timeStr, ok := tp.(string); ok {
+							ts, err := httime.Parse(time.RFC3339Nano, timeStr)
+							if err == nil {
+								meta.timestamp = ts
+							}
+						}
 					}
-					meta.timestamp = ts
-					meta.dataset = metaMap["dataset"].(string)
+					if meta.timestamp.IsZero() {
+						meta.timestamp = time.Now()
+					}
+					if ds, ok := metaMap["dataset"]; ok {
+						if dataset, ok := ds.(string); ok {
+							meta.dataset = dataset
+						}
+					}
 					if meta.dataset == "" {
 						meta.dataset = options.Reqs.Dataset
 					}
-					meta.writekey = metaMap["writekey"].(string)
+					if wk, ok := metaMap["writekey"]; ok {
+						if writekey, ok := wk.(string); ok {
+							meta.writekey = writekey
+						}
+					}
 					if meta.writekey == "" {
 						meta.writekey = options.Reqs.WriteKey
 					}
@@ -252,6 +281,7 @@ func getMetadataFromEvent(mixed chan event.Event, options GlobalOptions) chan ev
 					}
 				}
 			}
+			fmt.Printf("got ev %+v\n", evWithM)
 			evWithMChan <- evWithM
 		}
 	}()
@@ -341,7 +371,7 @@ func sampleIfNecessary(toBeSent chan evWithMeta, options GlobalOptions) chan evW
 				close(newSent)
 				return
 			}
-			if evM.meta.goalSampleRate <= 1 {
+			if evM.meta.goalSampleRate == 1 {
 				// no additional sampling necessary
 				evM.SampleRate = evM.meta.presampledRate
 				newSent <- evM
@@ -366,11 +396,13 @@ func sampleIfNecessary(toBeSent chan evWithMeta, options GlobalOptions) chan evW
 // initialize the dynamic sampler holder
 var samplers map[string]dynsampler.Sampler
 var samplerLock sync.RWMutex
+var once sync.Once
 
 // getSampler returns a sampler if one exists for thi event type or creates one
 // if it doesn't. The creation is protected for multithreaded access to the
 // sampler cache map.
 func getSampler(evM evWithMeta, options GlobalOptions) dynsampler.Sampler {
+	once.Do(func() { samplers = make(map[string]dynsampler.Sampler, 0) })
 	// make a key to get the right dynsampler to use
 	fields := []string{
 		evM.meta.dataset, evM.meta.writekey,
@@ -395,7 +427,7 @@ func getSampler(evM evWithMeta, options GlobalOptions) dynsampler.Sampler {
 				ClearFrequencySec: options.DynWindowSec,
 				MinEventsPerSec:   options.MinSampleRate,
 			}
-			if err := samplers[key].Start(); err != nil {
+			if err := sampler.Start(); err != nil {
 				logrus.WithField("error", err).Fatal("dynsampler failed to start")
 			}
 			samplers[key] = sampler
@@ -548,6 +580,8 @@ func sendEvent(evM evWithMeta) {
 	}
 	libhEv := libhoney.NewEvent()
 	libhEv.Metadata = evM
+	libhEv.Dataset = evM.meta.dataset
+	libhEv.WriteKey = evM.meta.writekey
 	libhEv.Timestamp = evM.meta.timestamp
 	libhEv.SampleRate = uint(evM.SampleRate)
 	if err := libhEv.Add(evM.Data); err != nil {
