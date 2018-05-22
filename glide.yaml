@@ -1,4 +1,4 @@
-package: github.com/honeycombio/honeykaf
+package: github.com/cargurus/honeykaf
 import:
 - package: github.com/Shopify/sarama
 - package: github.com/Sirupsen/logrus

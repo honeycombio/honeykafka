@@ -161,6 +161,11 @@ func (b *RecordBatch) decode(pd packetDecoder) (err error) {
 	bufSize := int(batchLen) - recordBatchOverhead
 	recBuffer, err := pd.getRawBytes(bufSize)
 	if err != nil {
+		if err == ErrInsufficientData {
+			b.PartialTrailingRecord = true
+			b.Records = nil
+			return nil
+		}
 		return err
 	}
 
@@ -203,21 +208,15 @@ func (b *RecordBatch) decode(pd packetDecoder) (err error) {
 
 func (b *RecordBatch) encodeRecords(pe packetEncoder) error {
 	var raw []byte
-	if b.Codec != CompressionNone {
-		var err error
-		if raw, err = encode(recordsArray(b.Records), nil); err != nil {
-			return err
-		}
-		b.recordsLen = len(raw)
+	var err error
+	if raw, err = encode(recordsArray(b.Records), pe.metricRegistry()); err != nil {
+		return err
 	}
+	b.recordsLen = len(raw)
 
 	switch b.Codec {
 	case CompressionNone:
-		offset := pe.offset()
-		if err := recordsArray(b.Records).encode(pe); err != nil {
-			return err
-		}
-		b.recordsLen = pe.offset() - offset
+		b.compressedRecords = raw
 	case CompressionGZIP:
 		var buf bytes.Buffer
 		writer := gzip.NewWriter(&buf)
