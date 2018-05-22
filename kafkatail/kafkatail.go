@@ -37,14 +37,13 @@ func GetChans(ctx context.Context, options Options) ([]chan string, error) {
 	}
 
 	go func() {
+		log.Printf("consumer started")
 		for {
 			select {
 			case msg := <-partitionConsumer.Messages():
 				if msg != nil {
-					log.Printf("Consumed message: %+v\n", msg)
 					lines <- string(msg.Value)
 				} else {
-					log.Printf("got nil message\n")
 					time.Sleep(1000 * time.Millisecond)
 				}
 			case <-ctx.Done():
