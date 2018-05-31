@@ -24,7 +24,7 @@ import (
 	"github.com/honeycombio/honeytail/parsers"
 	"github.com/honeycombio/honeytail/parsers/htjson"
 
-	"github.com/honeycombio/honeykaf/kafkatail"
+	"github.com/cargurus/honeykaf/kafkatail"
 )
 
 type metadata struct {

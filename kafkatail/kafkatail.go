@@ -2,64 +2,110 @@ package kafkatail
 
 import (
 	"context"
+	"github.com/Shopify/sarama"
+	"github.com/cenk/backoff"
+	"github.com/rubyist/circuitbreaker"
 	"log"
 	"time"
-
-	"github.com/Shopify/sarama"
 )
 
 type Options struct {
-	Server    string `long:"server" description:"kafka server" default:"localhost"`
-	Port      string `long:"port" description:"kafka port" default:"9092"`
-	Topic     string `long:"topic" description:"kafka topic" default:"my_topic"`
-	Partition int32  `long:"partition" description:"partition to read from"`
+	Server         string `long:"server" description:"kafka server" default:"localhost"`
+	Port           string `long:"port" description:"kafka port" default:"9092"`
+	Topic          string `long:"topic" description:"kafka topic" default:"my_topic"`
+	Partition      int32  `long:"partition" description:"partition to read from"`
+	StartingOffset int64  `long:"offset" description:"offset to start from" default:"-1"`
 }
 
 // GetChans returns a list of channels but it only ever has one entry - the
 // partition on which we're listening.
 // TODO listen on multiple channels to multiple partitions
 func GetChans(ctx context.Context, options Options) ([]chan string, error) {
-	linesChans := make([]chan string, 1, 1)
 	lines := make(chan string, 1)
-	linesChans[0] = lines
 
-	serverString := options.Server + ":" + options.Port
-	// TODO use a reasonable kafka *Config instead of nil for the new consumer
-	consumer, err := sarama.NewConsumer([]string{serverString}, nil)
+	linesChan := make([]chan string, 1, 1)
+	linesChan[0] = lines
+
+	config := sarama.NewConfig()
+	config.Consumer.Return.Errors = true
+
+	brokers := []string{options.Server + ":" + options.Port}
+
+	consumer, err := sarama.NewConsumer(brokers, config)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	partitionConsumer, err := consumer.ConsumePartition(
-		options.Topic, options.Partition, sarama.OffsetNewest)
+	lastSuccess := options.StartingOffset
+
+	// TODO: Make these configurable
+	expBackoff := backoff.NewExponentialBackOff()
+	expBackoff.InitialInterval = 2 * time.Second
+	expBackoff.MaxInterval = 30 * time.Second
+	expBackoff.MaxElapsedTime = 5 * time.Minute
+
+	breaker := circuit.NewConsecutiveBreaker(10)
+	breaker.BackOff = expBackoff
+
+	partitionConsumer, err := consumer.ConsumePartition(options.Topic, options.Partition, lastSuccess)
+
 	if err != nil {
-		panic(err)
+		log.Printf("Error starting PartitionConsumer for topic %v partition %d "+
+			"with offset %d\n", options.Topic, options.Partition, options.StartingOffset)
+		return nil, err
 	}
+
+	log.Printf("Started PartitionConsumer for topic %v partition %d "+
+		"with offset %d\n", options.Topic, options.Partition, options.StartingOffset)
 
 	go func() {
+		defer func() {
+			log.Printf("Stopping consumers for topic %v partition %d; "+
+				"last successfully read offset %d\n", options.Topic, options.Partition, lastSuccess)
+
+			close(lines)
+
+			err := partitionConsumer.Close()
+			if err != nil {
+				log.Fatalf("Error shutting down partition consumer for topic %v partition %d\n",
+					options.Topic, options.Partition)
+			}
+
+			err = consumer.Close()
+			if err != nil {
+				log.Fatalf("Error shutting down consumer for brokers %v\n", brokers)
+				panic(err)
+			}
+		}()
+
 		for {
-			select {
-			case msg := <-partitionConsumer.Messages():
-				if msg != nil {
-					log.Printf("Consumed message: %+v\n", msg)
-					lines <- string(msg.Value)
-				} else {
-					log.Printf("got nil message\n")
-					time.Sleep(1000 * time.Millisecond)
+			if breaker.Ready() {
+				select {
+				case msg, open := <-partitionConsumer.Messages():
+					if !open {
+						break
+					} else if msg != nil {
+						lastSuccess = msg.Offset
+						lines <- string(msg.Value)
+						breaker.Success()
+					}
+				case <-partitionConsumer.Errors():
+					breaker.Fail()
+				case <-ctx.Done():
+					break
 				}
-			case <-ctx.Done():
-				// listen for the context's Done channel to clean up and exit
-				close(lines)
-				if err := partitionConsumer.Close(); err != nil {
-					log.Fatalln(err)
+			} else if expBackoff.NextBackOff() == backoff.Stop {
+				log.Println("Maximum number of retries exceeded, failing")
+			} else {
+				select {
+					case <- ctx.Done():
+						break
+				case <- breaker.Subscribe():
+						continue
 				}
-				if err := consumer.Close(); err != nil {
-					log.Fatalln(err)
-				}
-				return
 			}
 		}
 	}()
 
-	return linesChans, nil
+	return linesChan, err
 }
