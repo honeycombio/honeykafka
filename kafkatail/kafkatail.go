@@ -100,7 +100,7 @@ func GetChans(ctx context.Context, options Options) ([]chan string, error) {
 				select {
 					case <- ctx.Done():
 						break
-					case <- time.After(expBackoff.NextBackOff()):
+				case <- breaker.Subscribe():
 						continue
 				}
 			}
