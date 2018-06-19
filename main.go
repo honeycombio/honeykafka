@@ -12,7 +12,7 @@ import (
 	"github.com/honeycombio/libhoney-go"
 	flag "github.com/jessevdk/go-flags"
 
-	"github.com/honeycombio/honeykaf/kafkatail"
+	"github.com/honeycombio/honeykafka/kafkatail"
 	"github.com/honeycombio/honeytail/httime"
 	"github.com/honeycombio/honeytail/parsers/htjson"
 )
