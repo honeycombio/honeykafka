@@ -12,7 +12,7 @@ import (
 	"github.com/honeycombio/libhoney-go"
 	flag "github.com/jessevdk/go-flags"
 
-	"github.com/honeycombio/honeykaf/kafkatail"
+	"github.com/honeycombio/honeykafka/kafkatail"
 	"github.com/honeycombio/honeytail/httime"
 	"github.com/honeycombio/honeytail/parsers/htjson"
 )
@@ -151,7 +151,7 @@ func setVersionUserAgent(backfill bool, parserName string) {
 	if backfill {
 		parserName += " backfill"
 	}
-	libhoney.UserAgentAddition = fmt.Sprintf("honeykaf/%s (%s)", version, parserName)
+	libhoney.UserAgentAddition = fmt.Sprintf("honeykafka/%s (%s)", version, parserName)
 }
 
 // handleOtherModes takse care of all flags that say we should just do something
@@ -216,9 +216,9 @@ func sanityCheckOptions(options *GlobalOptions) {
 
 func usage() {
 	fmt.Print(`
-Usage: honeykaf -k <writekey> -d <mydata> [optional arguments]
+Usage: honeykafka -k <writekey> -d <mydata> [optional arguments]
 
 For even more detail on required and optional parameters, run
-honeykaf --help
+honeykafka --help
 `)
 }
