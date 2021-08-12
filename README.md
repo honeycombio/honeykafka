@@ -1,5 +1,7 @@
 # honeykafka [![Build Status](https://travis-ci.org/honeycombio/honeykafka.svg?branch=master)](https://travis-ci.org/honeycombio/honeykafka)
 
+[![OSS Lifecycle](https://img.shields.io/osslifecycle/honeycombio/REPO)](https://github.com/honeycombio/home/blob/main/honeycomb-oss-lifecycle-and-practices.md)
+
 `honeykafka` is a Kafka consumer that expects JSON messages on a kafka topic and sends them on to [Honeycomb](https://honeycomb.io)
 
 **This repo is in beta!** Please file an issue if this doesn't behave as expected.
