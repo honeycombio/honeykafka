@@ -1,6 +1,8 @@
 # honeykafka
 
-[![OSS Lifecycle](https://img.shields.io/osslifecycle/honeycombio/honeykafka?color=success)](https://github.com/honeycombio/home/blob/main/honeycomb-oss-lifecycle-and-practices.md)
+[![OSS Lifecycle](https://img.shields.io/osslifecycle/honeycombio/honeykafka?color=pink)](https://github.com/honeycombio/home/blob/main/honeycomb-oss-lifecycle-and-practices.md)
+
+STATUS: this project is being sunset. See https://github.com/honeycombio/honeykafka/issues/13
 
 `honeykafka` is a Kafka consumer that expects JSON messages on a kafka topic and sends them on to [Honeycomb](https://honeycomb.io)
 
