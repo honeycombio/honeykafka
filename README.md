@@ -1,8 +1,12 @@
 # honeykafka
 
-[![OSS Lifecycle](https://img.shields.io/osslifecycle/honeycombio/honeykafka?color=pink)](https://github.com/honeycombio/home/blob/main/honeycomb-oss-lifecycle-and-practices.md)
+[![OSS Lifecycle](https://img.shields.io/osslifecycle/honeycombio/honeykafka)](https://github.com/honeycombio/home/blob/main/honeycomb-oss-lifecycle-and-practices.md)
 
-STATUS: this project is being sunset. See https://github.com/honeycombio/honeykafka/issues/13
+**STATUS: this project is [archived](https://github.com/honeycombio/home/blob/main/honeycomb-oss-lifecycle-and-practices.md).** You can use the [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/kafkareceiver) with OpenTelemetry to send telemetry data from Kafka to Honeycomb.
+
+Questions? You can chat with us in the **Honeycomb Pollinators** Slack. You can find a direct link to request an invite in [Spread the Love: Appreciating Our Pollinators Community](https://www.honeycomb.io/blog/spread-the-love-appreciating-our-pollinators-community/).
+
+---
 
 `honeykafka` is a Kafka consumer that expects JSON messages on a kafka topic and sends them on to [Honeycomb](https://honeycomb.io)
 
